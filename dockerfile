@@ -8,7 +8,9 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o main ./cmd/server
+# Build both services
+RUN go build -o api-server ./cmd/api-server
+RUN go build -o redirect-server ./cmd/redirect-server
 
 # Final stage
 FROM alpine:latest
@@ -18,11 +20,14 @@ WORKDIR /root/
 # Install CA certificates for HTTPS
 RUN apk --no-cache add ca-certificates
 
-# Copy the binary from builder stage
-COPY --from=builder /app/main .
+# Copy both binaries from builder stage
+COPY --from=builder /app/api-server .
+COPY --from=builder /app/redirect-server .
+
 # Copy web templates and static files
 COPY --from=builder /app/web ./web
 
-EXPOSE 8080
+EXPOSE 8080 8081
 
-CMD ["./main"]
+# Default command (will be overridden by docker-compose)
+CMD ["./api-server"]

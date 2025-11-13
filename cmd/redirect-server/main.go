@@ -15,50 +15,39 @@ import (
 func main() {
     // Get configuration from environment variables
     dbConnStr := getEnv("DATABASE_URL", "postgres://user:password@db:5432/url_shortener?sslmode=disable")
-    redisURL := getEnv("REDIS_URL", "redis://redis:6379")  // ADD THIS LINE
-    port := getEnv("PORT", "8080")
-    baseURL := getEnv("BASE_URL", "http://localhost:8080")
+    redisURL := getEnv("REDIS_URL", "redis://redis:6379")
+    port := getEnv("PORT", "8081")  // Different port for redirect service
     
-    // Initialize database store
+    // Initialize stores
     dbStore, err := store.NewPostgresStore(dbConnStr)
     if err != nil {
         log.Fatalf("Failed to connect to database: %v", err)
     }
     defer dbStore.Close()
 
-    // Initialize Redis cache
     redisCache, err := store.NewRedisCache(redisURL)
     if err != nil {
         log.Fatalf("Failed to connect to Redis: %v", err)
     }
     defer redisCache.Close()
 
-    // Create cached store
     cachedStore := store.NewCachedStore(dbStore, redisCache)
 
-    // Initialize handler with cached store - REMOVE THE DUPLICATE
-    handler, err := handler.NewHandler(cachedStore, baseURL)
+    // Initialize redirect handler
+    handler, err := handler.NewHandler(cachedStore, "http://localhost:8081")
     if err != nil {
         log.Fatalf("Failed to create handler: %v", err)
     }
     
-    // Setup router
+    // Setup router - minimal for performance
     r := chi.NewRouter()
-    
-    // Middleware
-    r.Use(middleware.Logger)
     r.Use(middleware.Recoverer)
     r.Use(middleware.RealIP)
     
-    // Routes
-    r.Get("/", handler.HomePage)
-    r.Post("/api/shorten", handler.CreateShortURL)
+    // ONLY redirect route
     r.Get("/{shortCode}", handler.RedirectToURL)
     
-    // Serve static files
-    r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-    
-    log.Printf("Server starting on :%s", port)
+    log.Printf("Redirect Service starting on :%s", port)
     log.Fatal(http.ListenAndServe(":"+port, r))
 }
 

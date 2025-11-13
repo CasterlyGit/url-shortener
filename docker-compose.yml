@@ -1,18 +1,34 @@
 services:
-  app:
+  api-server:
     build: .
     ports:
       - "8080:8080"
     environment:
       - DATABASE_URL=postgres://user:password@db:5432/url_shortener?sslmode=disable
       - REDIS_URL=redis://redis:6379
-      - BASE_URL=http://localhost:8080
+      - REDIRECT_BASE_URL=http://localhost:8081
+      - PORT=8080
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: on-failure
+    command: ["./api-server"]  # Run the API service
+
+  redirect-server:
+    build: .
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=postgres://user:password@db:5432/url_shortener?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - PORT=8081
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["./redirect-server"]  # Run the redirect service
 
   db:
     image: postgres:13
