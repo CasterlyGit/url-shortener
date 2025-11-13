@@ -9,24 +9,35 @@ import (
     "github.com/go-chi/chi/v5/middleware"
     
     "github.com/CasterlyGit/url-shortener/internal/handler"
-	"github.com/CasterlyGit/url-shortener/internal/store"
+    "github.com/CasterlyGit/url-shortener/internal/store"
 )
 
 func main() {
     // Get configuration from environment variables
-    dbConnStr := getEnv("DATABASE_URL", "postgres://user:password@localhost:5432/url_shortener?sslmode=disable")
+    dbConnStr := getEnv("DATABASE_URL", "postgres://user:password@db:5432/url_shortener?sslmode=disable")
+    redisURL := getEnv("REDIS_URL", "redis://redis:6379")  // ADD THIS LINE
     port := getEnv("PORT", "8080")
     baseURL := getEnv("BASE_URL", "http://localhost:8080")
     
     // Initialize database store
-    store, err := store.NewPostgresStore(dbConnStr)
+    dbStore, err := store.NewPostgresStore(dbConnStr)
     if err != nil {
         log.Fatalf("Failed to connect to database: %v", err)
     }
-    defer store.Close()
-    
-    // Initialize handler
-    handler, err := handler.NewHandler(store, baseURL)
+    defer dbStore.Close()
+
+    // Initialize Redis cache
+    redisCache, err := store.NewRedisCache(redisURL)
+    if err != nil {
+        log.Fatalf("Failed to connect to Redis: %v", err)
+    }
+    defer redisCache.Close()
+
+    // Create cached store
+    cachedStore := store.NewCachedStore(dbStore, redisCache)
+
+    // Initialize handler with cached store - REMOVE THE DUPLICATE
+    handler, err := handler.NewHandler(cachedStore, baseURL)
     if err != nil {
         log.Fatalf("Failed to create handler: %v", err)
     }
