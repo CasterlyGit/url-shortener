@@ -1,11 +1,12 @@
 package handler
 
 import (
+	"context"
     "encoding/json"
     "html/template"
     "net/http"
-	"context"
     
+    "github.com/CasterlyGit/url-shortener/internal/metrics"  
     "github.com/CasterlyGit/url-shortener/internal/model"
     "github.com/CasterlyGit/url-shortener/internal/shortcode"
     "github.com/CasterlyGit/url-shortener/internal/store"
@@ -33,6 +34,7 @@ func NewHandler(store store.URLStore, baseURL string) (*Handler, error) {
     return h, nil
 }
 
+// In CreateShortURL method, use Snowflake properly:
 func (h *Handler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
     var req model.CreateURLRequest
     
@@ -41,36 +43,20 @@ func (h *Handler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    // Generate short code with retry logic for collision
-    var shortCode string
-    var err error
-    for i := 0; i < 3; i++ { // Retry up to 3 times on collision
-        shortCode, err = shortcode.GenerateRandom()
-        if err != nil {
-            http.Error(w, "Failed to generate short code", http.StatusInternalServerError)
-            return
-        }
-        
-        // Check if short code already exists
-        existing, err := h.store.GetURLByShortCode(r.Context(), shortCode)
-        if err != nil {
-            http.Error(w, "Database error", http.StatusInternalServerError)
-            return
-        }
-        if existing == nil {
-            break // Short code is available
-        }
-        // If we get here, there was a collision - try again
-    }
-    
-    if shortCode == "" {
-        http.Error(w, "Failed to generate unique short code", http.StatusInternalServerError)
+    // Generate Snowflake ID (returns int64)
+    snowflakeID, err := shortcode.GenerateFromSnowflake()
+    if err != nil {
+        http.Error(w, "Failed to generate ID", http.StatusInternalServerError)
         return
     }
     
-    // Create URL record
+    // Generate short code from Snowflake ID
+    shortCode := shortcode.EncodeBase62(snowflakeID)
+    
+    // Create URL record with Snowflake ID
     url := &model.URL{
-        ShortCode: shortCode,
+        ID:        snowflakeID,  // int64 Snowflake ID
+        ShortCode: shortCode,    // string short code
         LongURL:   req.LongURL,
     }
     
@@ -78,6 +64,10 @@ func (h *Handler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Failed to create short URL", http.StatusInternalServerError)
         return
     }
+    
+    // Track metrics
+    metrics.ShortURLCreated.Inc()
+    metrics.DatabaseQueriesTotal.WithLabelValues("create_url").Inc()
     
     resp := model.CreateURLResponse{
         ShortURL: h.baseURL + "/" + shortCode,
@@ -107,11 +97,15 @@ func (h *Handler) RedirectToURL(w http.ResponseWriter, r *http.Request) {
         return
     }
     
+    // TRACK METRICS - MAKE SURE THESE LINES ARE PRESENT
+    metrics.RedirectsTotal.Inc()
+    metrics.DatabaseQueriesTotal.WithLabelValues("get_url").Inc()
+    
     // Increment click count in background
     go func() {
-        // Using background context since original request context might be cancelled
         ctx := context.Background()
         h.store.IncrementClickCount(ctx, shortCode)
+        metrics.DatabaseQueriesTotal.WithLabelValues("increment_click").Inc()
     }()
     
     http.Redirect(w, r, url.LongURL, http.StatusFound)

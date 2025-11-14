@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . .
 
-# Build both services
+# Build both services with correct paths
 RUN go build -o api-server ./cmd/api-server
 RUN go build -o redirect-server ./cmd/redirect-server
 

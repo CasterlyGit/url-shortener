@@ -1,44 +1,46 @@
 package shortcode
 
 import (
-    "crypto/rand"
     "fmt"
     "strings"
+
+    "github.com/CasterlyGit/url-shortener/internal/snowflake"
 )
 
 const (
-    // Base62 characters for short codes
     base62Chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    shortCodeLength = 6
 )
 
-// GenerateRandom generates a random short code using crypto/rand
-func GenerateRandom() (string, error) {
-    bytes := make([]byte, shortCodeLength)
-    if _, err := rand.Read(bytes); err != nil {
-        return "", fmt.Errorf("failed to generate random bytes: %w", err)
-    }
-    
-    // Convert to base62
-    for i := range bytes {
-        bytes[i] = base62Chars[bytes[i]%byte(len(base62Chars))]
-    }
-    
-    return string(bytes), nil
+var (
+    node *snowflake.Node
+)
+
+func InitSnowflake(nodeID int64) error {
+    var err error
+    node, err = snowflake.NewNode(nodeID)
+    return err
 }
 
-// GenerateFromID generates a short code from a numeric ID (for future use with Snowflake)
-func GenerateFromID(id int64) string {
-    if id == 0 {
+func GenerateFromSnowflake() (int64, error) {
+    if node == nil {
+        return 0, fmt.Errorf("snowflake node not initialized")
+    }
+    
+    return node.Generate(), nil
+}
+
+// EncodeBase62 converts a int64 to base62 string
+func EncodeBase62(num int64) string {
+    if num == 0 {
         return string(base62Chars[0])
     }
     
     var result strings.Builder
     base := int64(len(base62Chars))
     
-    for id > 0 {
-        result.WriteByte(base62Chars[id%base])
-        id = id / base
+    for num > 0 {
+        result.WriteByte(base62Chars[num%base])
+        num = num / base
     }
     
     // Reverse the string
@@ -48,4 +50,13 @@ func GenerateFromID(id int64) string {
     }
     
     return string(runes)
+}
+
+// GenerateRandom is kept for backward compatibility
+func GenerateRandom() (string, error) {
+    id, err := GenerateFromSnowflake()
+    if err != nil {
+        return "", err
+    }
+    return EncodeBase62(id), nil
 }

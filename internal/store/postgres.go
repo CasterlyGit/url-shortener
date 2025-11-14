@@ -4,6 +4,8 @@ import (
     "context"
     "database/sql"
     "fmt"
+    "time"
+    
     "github.com/CasterlyGit/url-shortener/internal/model"
     _ "github.com/lib/pq"
 )
@@ -17,6 +19,11 @@ func NewPostgresStore(connStr string) (*PostgresStore, error) {
     if err != nil {
         return nil, fmt.Errorf("failed to open database: %w", err)
     }
+    
+    // Configure connection pool
+    db.SetMaxOpenConns(25)                 // Maximum open connections
+    db.SetMaxIdleConns(10)                 // Maximum idle connections  
+    db.SetConnMaxLifetime(5 * time.Minute) // Maximum connection lifetime
     
     if err := db.Ping(); err != nil {
         return nil, fmt.Errorf("failed to ping database: %w", err)
@@ -34,6 +41,7 @@ func (s *PostgresStore) CreateURL(ctx context.Context, url *model.URL) error {
     err := s.db.QueryRowContext(
         ctx, 
         query, 
+        url.ID,
         url.ShortCode, 
         url.LongURL,
     ).Scan(&url.ID, &url.CreatedAt)
